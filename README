@@ -1,0 +1,21 @@
+The following code is an implementation of the LZO algorithm for GPU's on the OpenCL framework
+The programs can be compiled by using the makefile
+	Remember to change the path variable in the make file to point towards location of the OpenCL installion on your particular machine.
+
+Using the makefile gives you a single executable GPU_compress which can be used for both compression and decompression purposes.
+The code uses a set of tags to operate in various modes and for passing parameters
+A brief summary is as follows:
+
+Expected input format: ./GPU_compress -tag [optional-value] input-file/dirname output-file/dirname
+Available tags:
+-D -> Decompression (Compression is default), Values: 0(CPU Version, Default) || 1(CPU+GPU version)
+-R -> If input is a Directory (A file is assumed to be given by default)
+-B -> Block size(Bytes), 1024 <= Values <= 49152 
+-p -> Display information regarding the openCl platform
+-g -> Display information regarding the GPU Device being used
+-P -> Represents number of work-groups launced per SMP, Values >= 1(DefaultValue)
+-T -> No of work-items in a work-group, 8 <= Values <= 1024 (Default value = 128)
+-t -> Display timing information of the program
+
+Several Optimizations have been included in the GPU algorithm for improving performance
+For more information refer to the thesis pdf
