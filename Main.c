@@ -1,10 +1,3 @@
-/* Author: Niketh Boreddy
-   email: nikethcse@gmail.com
-   
-  Date: 10th June 2016
-  The follwing file is a part of the LZO algortihm implementation for GPU's
-*/
-
 #include "General_functions.h"
 #include "OpenCL_functions.h"
 
@@ -33,7 +26,7 @@ int main(int argc, char *argv[]){
 	cl_ushort pll = 1;
 	
 	int i;
-	for(i = 1; i < argc; i++){					//Parsing Tags and their values
+	for(i = 1; i < argc; i++){
 		if(argv[i][0] != '-'){
 			break;
 		}
@@ -110,7 +103,7 @@ int main(int argc, char *argv[]){
 		exit(1);
 	}
 	
-	int no_files = 0;			//Determing paths of input and output files
+	int no_files = 0;
 	if(recursive_compress){
 		no_files = RecursiveCompressFiles(max_files, max_filename_sz, argv[argc-2], argv[argc-1], files, out_files);
 	}
@@ -128,7 +121,7 @@ int main(int argc, char *argv[]){
 	if(timing_info) printf("Program Tag validation = %f ms\n",(double) (checkpoint[1].tv_usec - checkpoint[0].tv_usec) / 1000 + (double) (checkpoint[1].tv_sec - checkpoint[0].tv_sec)*1000);
 	
 	if(!useOpenCL) goto Label1;
-	cl_int err_code;			//OpenCL Initializations
+	cl_int err_code;
 	char buffer[10240];
 
 	cl_uint num_platforms;
@@ -172,7 +165,7 @@ int main(int argc, char *argv[]){
 	checkErr(err_code, "clCreateContext");
 
 	if(compress) command_queue = clCreateCommandQueue(context, default_device,  CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err_code);
-	else command_queue = clCreateCommandQueue(context, default_device,  0, &err_code); //Decompression is done searially
+	else command_queue = clCreateCommandQueue(context, default_device,  0, &err_code);
 	checkErr(err_code, "clCreateCommandQueue");
 
 	char *srcpath;
@@ -224,7 +217,7 @@ int main(int argc, char *argv[]){
 	
 Label1:	for(i = 0; i < no_files; i++){
 		printf("\n");
-		gettimeofday(&checkpoint[1], NULL);		//Reading Input file
+		gettimeofday(&checkpoint[1], NULL);
 		FILE *fp = fopen(files[i], "r");
 		if (fp == NULL){
       			printf("Couldn't open file %s;\n", files[i]);
@@ -255,7 +248,6 @@ Label1:	for(i = 0; i < no_files; i++){
     			in_memobj = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, in_size*sizeof(unsigned char), in_ptr, &err_code);
     			checkErr(err_code, "clCreateBuffer:in");
     			gettimeofday(&checkpoint[3], NULL);
-    			//Creation of Input Buffer for GPU's
 			if(timing_info) printf("Reading file %s to GPU = %f ms\n",files[i], (double) (checkpoint[3].tv_usec - checkpoint[2].tv_usec)/1000 + (double) (checkpoint[3].tv_sec - checkpoint[2].tv_sec)*1000);	
     		
 	    		int blocks = in_size%block_size == 0 ? in_size/block_size : in_size/block_size + 1;
@@ -288,7 +280,6 @@ Label1:	for(i = 0; i < no_files; i++){
 	    		err_code |= clSetKernelArg(kernel, 6, sizeof(cl_mem), (void *)&Endpts);
 	    		err_code |= clSetKernelArg(kernel, 7, sizeof(cl_mem), (void *)&Debug);
 	    		err_code |= clSetKernelArg(kernel, 8, sizeof(cl_mem), (void *)&HashTbl);
-	    		//Output Buffer Creation and arguments initializations
 			checkErr(err_code, "clSetKernelArg");
 			int j, iter;
 			for(j = 0, iter = 0; j < blocks; j += blocksPerLaunch, iter++){
@@ -297,7 +288,6 @@ Label1:	for(i = 0; i < no_files; i++){
 				if(blocks - j < blocksPerLaunch)szGlobalWorkSize[0] = (blocks-j)*NUM_THREADS;
 				err_code = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, szGlobalWorkSize, szLocalWorkSize, 0, NULL, NULL);
 				checkErr(err_code, "clEnqueNDRangeKernel");
-				//A set of blocks are launced in each iteration
 			}
 	    		clFinish(command_queue);
 	    		gettimeofday(&checkpoint[4], NULL);
@@ -312,21 +302,51 @@ Label1:	for(i = 0; i < no_files; i++){
 	    		}
 
 	    		err_code = clEnqueueReadBuffer(command_queue, Endpts, CL_TRUE, 0, blocks*sizeof(cl_uint), endpts, 0, NULL, NULL);
+			checkErr(err_code, "Pos1");
 	    		err_code |= clEnqueueReadBuffer(command_queue, Debug, CL_TRUE, 0, szGlobalWorkSize[0]*sizeof(unsigned int), Debug_vals, 0, NULL, NULL);
+			checkErr(err_code, "Pose2");
 			err_code |= clEnqueueReadBuffer(command_queue, out_memobj, CL_TRUE, 0, out_size*sizeof(unsigned char), out_ptr, 0, NULL, NULL);
 	    		checkErr(err_code, "clEnqueueReadBuffer");
+
+			int lenbyts = 0;			//header construction for storing length of original file in compressed file
+			unsigned int sz = in_size;
+			while(sz != 0){
+				sz = sz/256;
+				lenbyts++;
+			}
+			sz = lenbyts;
+			int loglenbyts = 0;
+			while(sz > 255){
+				sz -= 255;
+				loglenbyts++;
+			}
+			loglenbyts++;
+			unsigned char Header[lenbyts + loglenbyts];
+			sz = lenbyts;
+			for(j = 0; j < loglenbyts; j++){
+				if(sz > 255){
+					sz -= 255;
+					Header[j] = 0;
+				}
+				else Header[j] = sz;
+			}
+			sz = in_size;
+			for(j = 0; j < lenbyts; j++){
+				Header[j + loglenbyts] = sz%256;
+				sz = sz/256;
+			}
 	    		
-	    		//Reading output Buffers from GPU
 			gettimeofday(&checkpoint[5], NULL);
 	    		if(timing_info) printf("Time taken for Reading Output Buffer %f ms\n",(double) (checkpoint[5].tv_usec - checkpoint[4].tv_usec) / 1000 + (double) (checkpoint[5].tv_sec - checkpoint[4].tv_sec)*1000);
 	    		
-	    		//Writing output
+
 	    		fp = fopen(out_files[i], "w");
 	    		if(fp == NULL){
 	    			printf("Couldn't open file %s for writing output\n", out_files[i]);
 	    			continue;
 	    		}
-	    		unsigned char* block_data;
+	    		if(fwrite(Header,1,loglenbyts+lenbyts, fp) <=0 ) printf("Writing of Header failed for %s\n", out_files[i]);
+			unsigned char* block_data;
 	    		cl_uint blksz = out_size/blocks;
 	    		int tmp;
 	    		int sum = 0;
@@ -351,9 +371,27 @@ Label1:	for(i = 0; i < no_files; i++){
 			clReleaseMemObject(HashTbl);
     		}
     		else{
-    			cl_uint out_size = 5*in_size > 5*0xC000 ? 5*in_size : 5*0xC000;
+    			cl_uint out_size = 0;				//Decoding length of original file from header
+			int j = 0;
+			int bits = 0;
+			while(in_ptr[j] == 0){
+				bits += 255;
+				j++;
+			}
+			bits += (unsigned char)in_ptr[j];
+			j++;
+			j += bits;
+			int k = 0;
+			while(k < bits){
+				out_size = out_size*256 + (unsigned char)in_ptr[--j];
+				k++;	
+			}
+			j += bits;
+			in_size -= j;
+			in_ptr += j;
+			int headerlen = j;
     			
-    			if(!useOpenCL) goto Label2;	//For CPU vs GPU model
+    			if(!useOpenCL) goto Label2;
     			in_memobj = clCreateBuffer(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, in_size*sizeof(unsigned char), in_ptr, &err_code);
     			checkErr(err_code, "clCreateBuffer:in");
     			gettimeofday(&checkpoint[3], NULL);
@@ -379,7 +417,7 @@ Label2:			if(!useOpenCL) gettimeofday(&checkpoint[3], NULL);
 	    			continue;
 	    		}
 	    		if(!useOpenCL)out_ptr = (unsigned char*)malloc(out_size*sizeof(char));
-	    		//Core Decompression algorithm: Reading of tokens
+	    		
 	    		unsigned int startidx = 0,endidx = 0, start_inp = 0;
 			unsigned int temp_t = 0;
 			while(start_inp < in_size){
@@ -469,8 +507,6 @@ Label2:			if(!useOpenCL) gettimeofday(&checkpoint[3], NULL);
     					printf("Logical error encountered .. Location: %d %d!!\n", start_inp, cpy_len);
     					break;
     				}
-	    			//Copying of Matched and Unmatched Data
-	    			//GPU version
 	    			if(useOpenCL){
 		    			err_code = clSetKernelArg(kernel, 3, sizeof(unsigned int), (void *)&startidx);
 		    			err_code |= clSetKernelArg(kernel, 4, sizeof(unsigned int), (void *)&start_inp);
@@ -481,7 +517,18 @@ Label2:			if(!useOpenCL) gettimeofday(&checkpoint[3], NULL);
 		    			err_code = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, szGlobalWorkSize, szLocalWorkSize, 0, NULL, NULL);
 					checkErr(err_code, "clEnqueNDRangeKernel");
 				}
-				//CPU Version
+				//printf("start_inp:%d startidx:%d cpy_len:%d tmp:%d m_len:%d m_off:%d endidx:%d\n", start_inp, startidx, cpy_len, tmp, m_len, m_off, endidx);
+				/*printf("-->");
+				int j;
+				for(j = start_inp; j < start_inp + cpy_len; j++){
+					printf("%c", in_ptr[j]);
+					Debug_out[startidx + (j-start_inp)] = in_ptr[j];
+				}
+				for(j = startidx+cpy_len; j < endidx; j++){
+					printf("%c", Debug_out[j-m_off]);
+					Debug_out[j] = Debug_out[j-m_off];
+				}
+				printf("<--\n");*/
 				else{
 					memcpy(out_ptr+startidx, in_ptr+start_inp, cpy_len);
 					int j;
@@ -495,17 +542,21 @@ Label2:			if(!useOpenCL) gettimeofday(&checkpoint[3], NULL);
 	    		if(useOpenCL)clFinish(command_queue);
 	    		
 	    		gettimeofday(&checkpoint[4], NULL);
-	    		if(timing_info) printf("Time taken for Output Buffer creation + Kernel execution time %f ms\n",(double) (checkpoint[4].tv_usec - checkpoint[3].tv_usec) / 1000 + (double) (checkpoint[4].tv_sec - checkpoint[3].tv_sec)*1000);
+	    		if(timing_info){
+			printf("Time taken for Output Buffer creation + Kernel execution time %f ms\n",(double) (checkpoint[4].tv_usec - checkpoint[3].tv_usec) / 1000 + (double) (checkpoint[4].tv_sec - checkpoint[3].tv_sec)*1000);
+			}
 	    		
+	    		//printf("%s", Debug_out);
 	    		if(!useOpenCL) goto Label3;
 	    		out_ptr = (unsigned char *)malloc(endidx);
 	    		err_code = clEnqueueReadBuffer(command_queue, out_memobj, CL_TRUE, 0, endidx, out_ptr, 0, NULL, NULL);
 	    		checkErr(err_code, "clEnqueueReadBuffer");
 	    		
 	    		gettimeofday(&checkpoint[5], NULL);
-	    		if(timing_info) printf("Time taken for Reading Output Buffer %f ms\n",(double) (checkpoint[5].tv_usec - checkpoint[4].tv_usec) / 1000 + (double) (checkpoint[5].tv_sec - checkpoint[4].tv_sec)*1000);
+	    		if(timing_info){
+			printf("Time taken for Reading Output Buffer %f ms\n",(double) (checkpoint[5].tv_usec - checkpoint[4].tv_usec) / 1000 + (double) (checkpoint[5].tv_sec - checkpoint[4].tv_sec)*1000);
+			}
 	    		
-	    		//Writing of decompressed file
 Label3:	    		if(!useOpenCL) gettimeofday(&checkpoint[5], NULL);
 			endidx = fwrite(out_ptr, 1, (unsigned int)endidx, fp);
 	    		if(endidx <= 0) printf("Write to file %s failed\n", out_files[i]);
@@ -517,10 +568,11 @@ Label3:	    		if(!useOpenCL) gettimeofday(&checkpoint[5], NULL);
 	    		if(timing_info){
 			printf("Writing file %f ms\n",(double) (checkpoint[6].tv_usec - checkpoint[5].tv_usec) / 1000 + (double) (checkpoint[6].tv_sec - checkpoint[5].tv_sec)*1000);
 			}
+			in_ptr -= headerlen;
     		}
     		free(in_ptr);
     		
-    		if(useOpenCL){					//Freeing Resources
+    		if(useOpenCL){
     			clReleaseMemObject(in_memobj);
     			clReleaseMemObject(out_memobj);
     		}

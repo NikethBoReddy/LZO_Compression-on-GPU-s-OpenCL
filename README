@@ -19,3 +19,7 @@ Available tags:
 
 Several Optimizations have been included in the GPU algorithm for improving performance
 For more information refer to the thesis pdf
+
+Disclaimer: The following code is not meant for full-fledged compression on files. It is likely to fail for filesizes > 4GB
+The code has been written with the main aim of testing compression speeds and not in the sense of developing a fully functional application
+However this will serve as an excellent starting point for those who are interested in implementing a complete program.
